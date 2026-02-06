@@ -1,0 +1,38 @@
+# Excel / workbooks
+*.xlsx
+*.xlsb
+*.xls
+*.csv
+
+# DIOT output files
+*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.env
+venv/
+ENV/
+
+# Config / runtime
+.diot_config.json
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporales
+_*
+~*
