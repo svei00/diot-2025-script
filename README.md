@@ -1,6 +1,6 @@
 # DIOT Generator — Registro de Facturación 2026v5
 
-Generador de archivos **DIOT** (Declaración Informativa de Operaciones con Terceros) para el SAT, basado en `Registro de Facturación 2026v5.xlsb`. Lee la hoja en **modo lectura** (nunca modifica); escribe solo el archivo `.txt` con el formato de 54 campos que el SAT requiere.
+Generador de archivos **DIOT** (Declaración Informativa de Operaciones con Terceros) para el SAT, basado en el `Registro de Facturación 2026v5` en cualquiera de sus formatos: **`.xlsb`, `.xlsm` o `.xlsx`**. Lee la hoja en **modo lectura** (nunca modifica); escribe solo el archivo `.txt` con el formato de 54 campos que el SAT requiere.
 
 ## Características
 
@@ -11,13 +11,16 @@ Generador de archivos **DIOT** (Declaración Informativa de Operaciones con Terc
 - ✅ **Múltiples RFC**: cada RFC puede tener su carpeta; la config se persiste por RFC  
 - ✅ **Nombre de archivo**: `MM. Abbr YYYY  N DIOT Declaración.txt` (normal) o `… C1/C2/… DIOT Declaración.txt` (complementarias)  
 - ✅ **Tkinter Save-As**: elige dónde guardar; recuerda la última carpeta usada  
-- ✅ **100% Python, sin dependencias raras**: pyxlsb, pandas  
+- ✅ **Formatos aceptados**: `.xlsb`, `.xlsm`, `.xlsx` (también `.xltm`/`.xltx`)  
+- ✅ **100% Python, sin dependencias raras**: pyxlsb, openpyxl, pandas  
 
 ## Requisitos
 
 - **Python 3.7+**  
-- `pip install pyxlsb pandas`  
-- El **`Registro de Facturación 2026vN.xlsb`** — puede vivir en cualquier carpeta; lo eliges con el file picker  
+- `pip install pyxlsb openpyxl pandas` (`pyxlsb` solo se usa para `.xlsb`, `openpyxl` solo para `.xlsm`/`.xlsx`)  
+- El **`Registro de Facturación 2026vN`** en `.xlsb`, `.xlsm` o `.xlsx` — puede vivir en cualquier carpeta; lo eliges con el file picker  
+
+> **Nota sobre `.xlsm` / `.xlsx`:** de estos formatos se leen los **valores en caché** de las fórmulas, que es lo que Excel escribe al guardar. Si el archivo lo generó un programa (nunca pasó por Excel), las fórmulas no traen valor y el script te lo dice: ábrelo en Excel, guárdalo y vuelve a correrlo. El `.xlsb` no tiene ese detalle.
 
 ## Instalación rápida
 
@@ -35,7 +38,7 @@ Generar_DIOT.bat        # Windows: doble clic
 python diot_generator.py   # cualquier SO
 ```
 Se abre una ventana con:
-- **Examinar…** → file picker para el `.xlsb` (recuerda el último que usaste)
+- **Examinar…** → file picker para el libro `.xlsb` / `.xlsm` / `.xlsx` (recuerda el último que usaste)
 - **Mes** → desplegable Enero–Diciembre
 - **Tipo** → `N` normal o `C1`, `C2`, … complementaria
 - **Generar DIOT** → corre y abre el Save-As para elegir dónde guardar
@@ -47,18 +50,19 @@ Al terminar imprime la conciliación contra la hoja `Resumen` en la misma ventan
 python diot_generator.py 6                       # Junio normal, abre Save-As
 python diot_generator.py 6 C1                    # Junio complementaria 1
 python diot_generator.py 6 N "C:\out\jun.txt"    # sin ningún diálogo
-python diot_generator.py 6 N "jun.txt" --libro "D:\ruta\Registro 2026v5.xlsb"
+python diot_generator.py 6 N "jun.txt" --libro "D:\ruta\Registro 2026v5.xlsm"
 ```
 
 ### Argumentos
 ```
-python diot_generator.py [mes 1-12] [N|C1|C2|...] [ruta_salida.txt] [--libro ruta.xlsb]
+python diot_generator.py [mes 1-12] [N|C1|C2|...] [ruta_salida.txt] [--libro ruta.xlsb|.xlsm|.xlsx]
 
 (sin argumentos)  abre la GUI
 mes:        1-12 (enero-diciembre)
 tipo:       N=normal (default), C1/C2/.../Cn=complementaria
 ruta:       ruta.txt (opcional; si no se da, abre Save-As)
---libro:    ruta al .xlsb (opcional; si no se da, busca uno en la carpeta actual)
+--libro:    ruta al libro .xlsb/.xlsm/.xlsx (opcional; si no se da, busca uno en la
+            carpeta actual, prefiriendo .xlsb > .xlsm > .xlsx)
 ```
 
 ## Parámetros leídos de la hoja `Control`

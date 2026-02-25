@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DIOT 2025+ batch (.txt) generator for "Registro de Facturacion 2026vN.xlsb".
+DIOT 2025+ batch (.txt) generator for "Registro de Facturacion 2026vN".
+
+Acepta el libro en .xlsb (pyxlsb), .xlsm/.xlsx/.xltm/.xltx (openpyxl).
+En los formatos OOXML se leen los VALORES EN CACHE de las formulas (data_only),
+que es lo que Excel guarda al salvar el archivo.
 
 Reads the workbook READ-ONLY; writes only the .txt. Never modifies the workbook.
 
@@ -36,7 +40,7 @@ CLI:
     python diot_generator.py 6                    # Junio normal, Save As
     python diot_generator.py 6 C1                 # Junio complementaria 1
     python diot_generator.py 6 N "ruta\\out.txt"  # sin dialogos
-    python diot_generator.py 6 N "out.txt" --libro "ruta\\Registro.xlsb"
+    python diot_generator.py 6 N "out.txt" --libro "ruta\\Registro.xlsm"
 
 Boardflare / Excel-Python:
     from diot_generator import build_diot, read_sheet
@@ -45,7 +49,7 @@ Boardflare / Excel-Python:
     records, totals = build_diot(rh, rr, ph, pr, year, month, op_map={})
 """
 
-import sys, csv, os, re, json, glob
+import sys, csv, os, re, json, glob, datetime as _dt
 from collections import defaultdict
 from pathlib import Path
 
@@ -96,44 +100,135 @@ def txt(v):
 
 
 def is_yes(v):
+    if isinstance(v, bool): return v          # fórmula cacheada como TRUE/FALSE
     return txt(v).lower() in ("si", "sí")
 
 
+EXCEL_EPOCH = _dt.datetime(1899, 12, 30)   # serial 1 = 1900-01-01 (bug 1900 incluido)
+
+
+def date_parts(v):
+    """(año, mes) de una fecha venga como venga. (0, 0) si no se reconoce.
+
+    .xlsb (pyxlsb) entrega las fechas como texto o como serial numérico;
+    .xlsx/.xlsm (openpyxl) las entrega ya como datetime. Se aceptan las tres.
+    """
+    if v is None or v == "":
+        return 0, 0
+    if isinstance(v, _dt.datetime) or isinstance(v, _dt.date):
+        return v.year, v.month
+    if isinstance(v, bool):
+        return 0, 0
+    if isinstance(v, (int, float)):                      # serial de Excel
+        try:
+            d = EXCEL_EPOCH + _dt.timedelta(days=float(v))
+        except (OverflowError, ValueError):
+            return 0, 0
+        return d.year, d.month
+    s = str(v).strip()
+    m = re.match(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", s)      # dd/mm/aaaa
+    if m:
+        return int(m.group(3)), int(m.group(2))
+    m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)            # aaaa-mm-dd (ISO)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return 0, 0
+
+
 def month_of(s):
-    """'21/06/2026' o '21/06/2026 12:00:00' -> 6"""
-    if not s: return 0
-    try: return int(str(s).strip()[3:5])
-    except Exception: return 0
+    """'21/06/2026', '2026-06-21 12:00:00', datetime o serial de Excel -> 6"""
+    return date_parts(s)[1]
 
 
 def year_of(s):
-    try: return int(str(s).strip()[6:10])
-    except Exception: return 0
+    return date_parts(s)[0]
 
 
 def code2(v): return txt(v)[:2]
 def uso_code(v): return txt(v)[:3]
 
 
-# ---------- xlsb access ----------
-def read_sheet(path, sheet):
-    """Returns (header_list, list_of_dict_rows)."""
-    import pyxlsb
-    with pyxlsb.open_workbook(path) as wb:
-        with wb.get_sheet(sheet) as ws:
-            grid = [{c.c: c.v for c in r} for r in ws.rows()]
-    if not grid: return [], []
-    headers = [str(grid[0].get(i, "")).strip() for i in range(max(grid[0]) + 1)]
-    hi = {h: i for i, h in enumerate(headers) if h}
-    return headers, [{h: d.get(i) for h, i in hi.items()} for d in grid[1:]]
+# ---------- acceso al libro (.xlsb / .xlsm / .xlsx) ----------
+XLSB_EXTS     = (".xlsb",)
+OPENPYXL_EXTS = (".xlsm", ".xlsx", ".xltm", ".xltx")
+LIBRO_EXTS    = XLSB_EXTS + OPENPYXL_EXTS
 
 
-def read_grid(path, sheet):
-    """Raw grid (list of {col_index: value}) — para Control y Resumen."""
+def _grid_xlsb(path, sheet):
     import pyxlsb
     with pyxlsb.open_workbook(path) as wb:
         with wb.get_sheet(sheet) as ws:
             return [{c.c: c.v for c in r} for r in ws.rows()]
+
+
+def _load_openpyxl(path, data_only):
+    try:
+        import openpyxl
+    except ImportError:
+        raise ImportError("Para leer .xlsx/.xlsm hace falta openpyxl:  pip install openpyxl")
+    return openpyxl.load_workbook(path, read_only=True, data_only=data_only,
+                                  keep_links=False)
+
+
+def _has_formulas(path, sheet):
+    """¿La hoja tiene fórmulas? (segunda pasada, sin data_only)."""
+    wb = _load_openpyxl(path, data_only=False)
+    try:
+        if sheet not in wb.sheetnames: return False
+        for i, r in enumerate(wb[sheet].iter_rows(values_only=True)):
+            if i == 0: continue                       # encabezados
+            for v in r:
+                if isinstance(v, str) and v.startswith("="):
+                    return True
+    finally:
+        wb.close()
+    return False
+
+
+def _grid_openpyxl(path, sheet):
+    """data_only=True -> valores en caché de las fórmulas (los que guardó Excel)."""
+    wb = _load_openpyxl(path, data_only=True)
+    try:
+        if sheet not in wb.sheetnames:
+            raise KeyError("la hoja '%s' no existe en %s" % (sheet, os.path.basename(path)))
+        grid, vivo = [], False
+        for r in wb[sheet].iter_rows(values_only=True):
+            d = {i: v for i, v in enumerate(r) if v is not None and v != ""}
+            grid.append(d)
+            if len(grid) > 1 and d:
+                vivo = True
+    finally:
+        wb.close()
+    if len(grid) > 1 and not vivo and _has_formulas(path, sheet):
+        # el archivo lo escribió un programa, no Excel: las fórmulas no traen caché
+        raise ValueError(
+            "La hoja '%s' de %s se lee vacía: el archivo no trae los valores\n"
+            "calculados de sus fórmulas. Ábrelo en Excel y guárdalo para que se\n"
+            "escriba la caché, o usa la versión .xlsb."
+            % (sheet, os.path.basename(path)))
+    while grid and not grid[-1]:                      # filas vacías al final
+        grid.pop()
+    return grid
+
+
+def read_grid(path, sheet):
+    """Raw grid (list of {col_index: value}) — para Control y Resumen."""
+    ext = os.path.splitext(str(path))[1].lower()
+    if ext in OPENPYXL_EXTS:
+        return _grid_openpyxl(path, sheet)
+    if ext in XLSB_EXTS:
+        return _grid_xlsb(path, sheet)
+    raise ValueError("Formato no soportado: '%s'. Usa %s"
+                     % (ext or path, ", ".join(LIBRO_EXTS)))
+
+
+def read_sheet(path, sheet):
+    """Returns (header_list, list_of_dict_rows)."""
+    grid = read_grid(path, sheet)
+    if not grid or not grid[0]: return [], []
+    headers = [str(grid[0].get(i, "")).strip() for i in range(max(grid[0]) + 1)]
+    hi = {h: i for i, h in enumerate(headers) if h}
+    return headers, [{h: d.get(i) for h, i in hi.items()} for d in grid[1:]]
 
 
 def find_col(headers, *cands):
@@ -326,12 +421,14 @@ def save_cfg(cfg):
 
 
 def find_workbook(folder="."):
-    pats = ["Registro de Facturaci*v*.xlsb", "*.xlsb"]
-    for pat in pats:
-        hits = [h for h in glob.glob(os.path.join(folder, pat))
-                if not os.path.basename(h).startswith("~$")]
-        if hits:
-            return sorted(hits, reverse=True)[0]
+    """Busca el libro: primero por nombre, luego cualquiera. .xlsb tiene prioridad
+    (trae siempre los valores calculados) y después .xlsm / .xlsx."""
+    for pat in ("Registro de Facturaci*v*%s", "*%s"):
+        for ext in LIBRO_EXTS:
+            hits = [h for h in glob.glob(os.path.join(folder, pat % ext))
+                    if not os.path.basename(h).startswith("~$")]
+            if hits:
+                return sorted(hits, reverse=True)[0]
     return None
 
 
@@ -348,6 +445,10 @@ def load_opmap(folder):
 # ---------- generación (compartida por CLI y GUI) ----------
 def generate(libro, month, tipo, out_path=None, ask_path=None):
     """Devuelve (out_path, records, tot, year, rfc, resumen) o (None,...) si se cancela."""
+    ext = os.path.splitext(str(libro))[1].lower()
+    if ext not in LIBRO_EXTS:
+        raise ValueError("Formato no soportado: '%s'.\nUsa un libro %s"
+                         % (ext or libro, ", ".join(LIBRO_EXTS)))
     folder = os.path.dirname(os.path.abspath(libro))
     rfc    = detect_rfc(libro, os.getcwd())
 
@@ -430,7 +531,7 @@ def run_gui():
     root.resizable(False, False)
     frm = ttk.Frame(root, padding=14); frm.grid()
 
-    ttk.Label(frm, text="Libro de registro (.xlsb):").grid(row=0, column=0, sticky="w")
+    ttk.Label(frm, text="Libro de registro (.xlsb / .xlsm / .xlsx):").grid(row=0, column=0, sticky="w")
     v_libro = tk.StringVar(value=guess)
     e = ttk.Entry(frm, textvariable=v_libro, width=64)
     e.grid(row=1, column=0, columnspan=2, sticky="we", pady=(0, 8))
@@ -438,9 +539,13 @@ def run_gui():
     def browse():
         d = os.path.dirname(v_libro.get()) or "."
         p = filedialog.askopenfilename(
-            title="Selecciona el Registro de Facturación (.xlsb)",
+            title="Selecciona el Registro de Facturación",
             initialdir=d if os.path.isdir(d) else ".",
-            filetypes=[("Libro Excel binario (*.xlsb)", "*.xlsb"), ("Todos", "*.*")])
+            filetypes=[("Libros de Excel (*.xlsb;*.xlsm;*.xlsx)", "*.xlsb *.xlsm *.xlsx"),
+                       ("Libro Excel binario (*.xlsb)", "*.xlsb"),
+                       ("Libro con macros (*.xlsm)", "*.xlsm"),
+                       ("Libro Excel (*.xlsx)", "*.xlsx"),
+                       ("Todos", "*.*")])
         if p: v_libro.set(p)
 
     ttk.Button(frm, text="Examinar…", command=browse).grid(row=1, column=2, padx=(8, 0), pady=(0, 8))
@@ -510,7 +615,8 @@ def main():
 
     libro = libro or find_workbook(".")
     if not libro or not os.path.isfile(libro):
-        print("No encontré el .xlsb. Usa --libro \"ruta\\Registro.xlsb\" o corre sin argumentos para la GUI.")
+        print("No encontré el libro (.xlsb/.xlsm/.xlsx). "
+              "Usa --libro \"ruta\\Registro.xlsm\" o corre sin argumentos para la GUI.")
         sys.exit(1)
 
     def ask_path(name, initdir):
