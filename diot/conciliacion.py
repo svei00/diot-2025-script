@@ -11,8 +11,20 @@ Tolerancias: importes $0.01 contra Resumen (mismas fórmulas, deben ser
 idénticos); $1 contra Declaracion (redondeos de la propia hoja); conteos 0.
 """
 
-from diot.layout_txt import (CAMPO_IVA_ACREDITABLE_16, CAMPO_IVA_RETENIDO,
+from diot.layout_txt import (CAMPO_ACTOS_EXENTOS, CAMPO_ACTOS_TASA_CERO,
+                             CAMPO_IVA_ACREDITABLE_8_NORTE, CAMPO_IVA_ACREDITABLE_16,
+                             CAMPO_IVA_RETENIDO, CAMPO_VALOR_ACTOS_8_NORTE,
                              CAMPO_VALOR_ACTOS_16, leer_campo)
+
+CAMPOS_A_TOTALIZAR = [
+    (CAMPO_VALOR_ACTOS_16, "valor actos 16%"),
+    (CAMPO_IVA_ACREDITABLE_16, "IVA acreditable 16%"),
+    (CAMPO_VALOR_ACTOS_8_NORTE, "valor actos 8% frontera norte"),
+    (CAMPO_IVA_ACREDITABLE_8_NORTE, "IVA acreditable 8% frontera norte"),
+    (CAMPO_IVA_RETENIDO, "IVA retenido"),
+    (CAMPO_ACTOS_EXENTOS, "actos exentos"),
+    (CAMPO_ACTOS_TASA_CERO, "actos tasa 0%"),
+]
 
 TOLERANCIA_RESUMEN = 0.01
 TOLERANCIA_DECLARACION = 1.0
@@ -32,6 +44,12 @@ RENGLONES_POR_TASA = [
     ("B", "IVA 16%", "iva_16", "B_iva_16"),
     ("C", "base 16%", "base_16", None),
     ("C", "IVA 16%", "iva_16", "C_iva_16"),
+    ("A", "base 8%", "base_8", "A_base_8"),
+    ("A", "IVA 8%", "iva_8", "A_iva_8"),
+    ("B", "base 8%", "base_8", "B_base_8"),
+    ("B", "IVA 8%", "iva_8", "B_iva_8"),
+    ("C", "base 8%", "base_8", "C_base_8"),
+    ("C", "IVA 8%", "iva_8", "C_iva_8"),
 ]
 
 # (concepto, clave en Declaracion, función que calcula nuestra cifra)
@@ -44,6 +62,8 @@ CRUCES_DECLARACION = [
      lambda r: r.buckets["C"].importes.base_16),
     ("Actos tasa 16% (con efectivo)", "actos_16_con_efectivo",
      lambda r: sum(b.importes.base_16 for b in r.buckets.values())),
+    ("Actos frontera 8% (con efectivo)", "actos_8_con_efectivo",
+     lambda r: sum(b.importes.base_8 for b in r.buckets.values())),
     ("TOTAL IVA acreditable", "iva_acreditable_total",
      lambda r: sum(b.importes.iva_16 + b.importes.iva_8 for b in r.buckets.values())),
 ]
@@ -84,14 +104,12 @@ def bloque_por_tasa(resultado, resumen, limite):
 
 
 def bloque_totales_txt(renglones):
-    base = sum(leer_campo(r, CAMPO_VALOR_ACTOS_16) for r in renglones)
-    iva = sum(leer_campo(r, CAMPO_IVA_ACREDITABLE_16) for r in renglones)
-    retenido = sum(leer_campo(r, CAMPO_IVA_RETENIDO) for r in renglones)
-    lineas = ["-" * ANCHO,
-              " TXT (pesos, Art. 20 CFF)   campo 12 base 16%% %12d   campo 22 IVA 16%% %10d"
-              % (base, iva)]
-    if retenido:
-        lineas.append(" %-26s campo 48 IVA retenido %10d" % ("", retenido))
+    """Suma de cada campo del TXT (lo que verá el portal al cargar el archivo)."""
+    lineas = ["-" * ANCHO, " TXT en pesos (Art. 20 CFF), suma por campo:"]
+    for numero_campo, nombre in CAMPOS_A_TOTALIZAR:
+        total = sum(leer_campo(r, numero_campo) for r in renglones)
+        if total or numero_campo in (CAMPO_VALOR_ACTOS_16, CAMPO_IVA_ACREDITABLE_16):
+            lineas.append("   campo %-3d %-40s %14d" % (numero_campo, nombre, total))
     return lineas
 
 

@@ -19,9 +19,10 @@ from typing import Dict, List, Tuple
 
 from diot import facturas, rep
 from diot.acumulados import ImportesPorTasa, TotalesDeBucket
-from diot.columnas import columnas_de_facturas, columnas_de_rep
+from diot.columnas import columnas_de_facturas, columnas_de_rep, valor
 from diot.layout_txt import ImportesEnteros, armar_renglon
 from diot.redondeo import base_minima_para_iva, redondear_cff
+from diot.region_fronteriza import aviso_si_parece_frontera_sur
 from diot.valores_celda import numero
 
 USOS_DEDUCIBLES_POR_OMISION = {"G01", "G03"}
@@ -40,6 +41,25 @@ class ResultadoDiot:
     avisos: List[str] = field(default_factory=list)
 
 
+# ---------------------------------------------------------------- avisos
+def avisar(resultado, aviso):
+    if aviso and aviso not in resultado.avisos:
+        resultado.avisos.append(aviso)
+
+
+def revisar_tasa_8(rfc, importes, codigo_postal, resultado):
+    if importes.iva_8:
+        avisar(resultado, aviso_si_parece_frontera_sur(rfc, codigo_postal))
+
+
+def revisar_factura(fila, col, importes, resultado):
+    rfc = fila.get(col.rfc)
+    if facturas.es_factura_mixta_16_y_8(fila, col):
+        avisar(resultado, "%s tiene una factura con IVA 16%% e IVA 8%% a la vez: la base "
+                          "8%% se tomó como IVA / 0.08; verificar contra el XML." % rfc)
+    revisar_tasa_8(rfc, importes, valor(fila, col.lugar_expedicion), resultado)
+
+
 # ---------------------------------------------------------------- recorrer el libro
 def acumular_facturas(filas, col, anio, mes, usos, limite, por_proveedor, resultado):
     for fila in filas:
@@ -49,6 +69,7 @@ def acumular_facturas(filas, col, anio, mes, usos, limite, por_proveedor, result
         if bucket is None:
             continue
         importes = facturas.importes_de_factura(fila, col, bucket)
+        revisar_factura(fila, col, importes, resultado)
         por_proveedor[fila.get(col.rfc)].sumar(importes)
         resultado.buckets[bucket].agregar(importes)
 
@@ -62,6 +83,7 @@ def acumular_rep(filas, col, anio, mes, por_proveedor, resultado):
                     (fila.get(col.rfc), motivo, numero(fila.get(col.iva_16))))
             continue
         importes = rep.importes_de_rep(fila, col)
+        revisar_tasa_8(fila.get(col.rfc), importes, valor(fila, col.lugar_expedicion), resultado)
         por_proveedor[fila.get(col.rfc)].sumar(importes)
         resultado.buckets["C"].agregar(importes)
 

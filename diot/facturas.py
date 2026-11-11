@@ -20,12 +20,14 @@ Luego se reparte:
 """
 
 from diot.acumulados import ImportesPorTasa
+from diot.columnas import valor
 from diot.valores_celda import (codigo_uso_cfdi, es_del_periodo, es_si, numero,
                                 primeros_dos, texto)
 
 BUCKET_BANCARIZADAS = "A"
 BUCKET_EFECTIVO = "B"
 TASA_16 = 0.16
+TASA_8 = 0.08
 
 
 def es_factura_deducible_del_mes(fila, col, anio, mes, usos_deducibles):
@@ -65,9 +67,34 @@ def importes_tasa_16(fila, col):
     return base, iva
 
 
+def es_factura_mixta_16_y_8(fila, col):
+    """Una factura con IVA 16% e IVA 8% a la vez rompe la regla de base 8%
+    (SubTotal - Descuento incluiría los conceptos al 16%)."""
+    return numero(fila.get(col.iva_16)) > 0 and numero(valor(fila, col.iva_8)) > 0
+
+
+def importes_tasa_8(fila, col, bucket):
+    """Base e IVA 8% (estímulo región fronteriza).
+
+    * Bancarizadas (A): base = SubTotal - Descuento, igual que el prellenado
+      del SAT y Resumen!AN. Solo es válida si la factura no mezcla tasas.
+    * Efectivo (B) o factura mixta: base = IVA 8% / 0.08. En efectivo no se
+      usa el neto porque puede traer IEPS o conceptos exentos.
+    """
+    iva = numero(valor(fila, col.iva_8))
+    if not iva:
+        return 0.0, 0.0
+    if bucket == BUCKET_BANCARIZADAS and not es_factura_mixta_16_y_8(fila, col):
+        base = numero(valor(fila, col.subtotal)) - numero(valor(fila, col.descuento))
+    else:
+        base = iva / TASA_8
+    return base, iva
+
+
 def importes_de_factura(fila, col, bucket):
     """Bolsa de importes de una factura ya clasificada en su bucket."""
     importes = ImportesPorTasa()
     importes.base_16, importes.iva_16 = importes_tasa_16(fila, col)
+    importes.base_8, importes.iva_8 = importes_tasa_8(fila, col, bucket)
     importes.iva_retenido = numero(fila.get(col.retenido_iva))
     return importes

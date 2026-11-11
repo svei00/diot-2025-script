@@ -74,4 +74,6 @@ def importes_de_rep(fila, col):
     importes = ImportesPorTasa()
     importes.base_16 = en_pesos(fila, col.base_16, equivalencia)
     importes.iva_16 = en_pesos(fila, col.iva_16, equivalencia)
+    importes.base_8 = en_pesos(fila, col.base_8, equivalencia)
+    importes.iva_8 = en_pesos(fila, col.iva_8, equivalencia)
     return importes
