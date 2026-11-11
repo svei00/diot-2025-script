@@ -70,6 +70,7 @@ class ColumnasFacturas:
     nivel_educativo: Optional[str] = None
     conceptos: Optional[str] = None
     lugar_expedicion: Optional[str] = None
+    uuid: Optional[str] = None
 
 
 def columnas_de_facturas(encabezados):
@@ -96,6 +97,7 @@ def columnas_de_facturas(encabezados):
         nivel_educativo=opcional("Nivel Educativo"),
         conceptos=opcional("Conceptos"),
         lugar_expedicion=opcional("LugarDeExpedicion"),
+        uuid=opcional("UUID"),
     )
 
 
@@ -114,6 +116,8 @@ class ColumnasRep:
     equivalencia: Optional[str] = None           # EquivalenciaDR
     moneda_pago: Optional[str] = None            # MonedaP
     metodo_documento: Optional[str] = None       # MetodoDePagoDR
+    importe_pagado: Optional[str] = None         # ImpPagado
+    documento_relacionado: Optional[str] = None  # IdDocumento Relacionado (UUID de la factura)
     base_8: Optional[str] = None
     iva_8: Optional[str] = None
     base_exento: Optional[str] = None
@@ -138,6 +142,8 @@ def columnas_de_rep(encabezados):
         equivalencia=opcional("EquivalenciaDR"),
         moneda_pago=opcional("MonedaP"),
         metodo_documento=opcional("MetodoDePagoDR"),
+        importe_pagado=opcional("ImpPagado"),
+        documento_relacionado=opcional("IdDocumento Relacionado"),
         base_8=opcional("IVA 8 Base"),
         iva_8=opcional("IVA 8 Importe"),
         base_exento=opcional("IVA Excento Base"),

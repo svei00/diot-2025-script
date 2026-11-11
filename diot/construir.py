@@ -23,7 +23,7 @@ from diot.columnas import columnas_de_facturas, columnas_de_rep, valor
 from diot.layout_txt import ImportesEnteros, armar_renglon
 from diot.redondeo import base_minima_para_iva, redondear_cff
 from diot.region_fronteriza import aviso_si_parece_frontera_sur
-from diot.valores_celda import numero
+from diot.valores_celda import numero, texto
 
 USOS_DEDUCIBLES_POR_OMISION = {"G01", "G03"}
 LIMITE_EFECTIVO_POR_OMISION = 2000
@@ -60,6 +60,19 @@ def revisar_factura(fila, col, importes, resultado):
     revisar_tasa_8(rfc, importes, valor(fila, col.lugar_expedicion), resultado)
 
 
+def revisar_rep(fila, col, importes, metodo_por_uuid, resultado):
+    rfc = fila.get(col.rfc)
+    if rep.paga_una_factura_pue(fila, col, metodo_por_uuid):
+        avisar(resultado, "%s: REP que paga una factura PUE (%.2f pagado). Se cuenta dos "
+                          "veces, igual que el SAT; pedir al proveedor que lo corrija."
+               % (rfc, rep.en_pesos(fila, col.importe_pagado,
+                                    rep.equivalencia_del_documento(fila, col))))
+    if importes.iva_retenido:
+        avisar(resultado, "%s: REP con IVA retenido %.2f (sumado al campo 48)."
+               % (rfc, importes.iva_retenido))
+    revisar_tasa_8(rfc, importes, valor(fila, col.lugar_expedicion), resultado)
+
+
 # ---------------------------------------------------------------- recorrer el libro
 def acumular_facturas(filas, col, anio, mes, usos, limite, por_proveedor, resultado):
     for fila in filas:
@@ -74,7 +87,15 @@ def acumular_facturas(filas, col, anio, mes, usos, limite, por_proveedor, result
         resultado.buckets[bucket].agregar(importes)
 
 
-def acumular_rep(filas, col, anio, mes, por_proveedor, resultado):
+def metodo_de_pago_por_uuid(filas_facturas, col_facturas):
+    """{UUID en mayúsculas: 'PUE - ...' / 'PPD - ...'} de RecibidasXML."""
+    if not col_facturas.uuid:
+        return {}
+    return {texto(f.get(col_facturas.uuid)).upper(): texto(f.get(col_facturas.metodo_pago))
+            for f in filas_facturas if f.get(col_facturas.uuid)}
+
+
+def acumular_rep(filas, col, anio, mes, metodo_por_uuid, por_proveedor, resultado):
     for fila in filas:
         se_incluye, motivo = rep.motivo_para_excluir_rep(fila, col, anio, mes)
         if not se_incluye:
@@ -83,7 +104,7 @@ def acumular_rep(filas, col, anio, mes, por_proveedor, resultado):
                     (fila.get(col.rfc), motivo, numero(fila.get(col.iva_16))))
             continue
         importes = rep.importes_de_rep(fila, col)
-        revisar_tasa_8(fila.get(col.rfc), importes, valor(fila, col.lugar_expedicion), resultado)
+        revisar_rep(fila, col, importes, metodo_por_uuid, resultado)
         por_proveedor[fila.get(col.rfc)].sumar(importes)
         resultado.buckets["C"].agregar(importes)
 
@@ -128,10 +149,11 @@ def build_diot(rec_headers, rec_rows, pag_headers, pag_rows, year, month, op_map
     resultado = ResultadoDiot()
     por_proveedor = defaultdict(ImportesPorTasa)
 
-    acumular_facturas(rec_rows, columnas_de_facturas(rec_headers), year, month,
+    col_facturas = columnas_de_facturas(rec_headers)
+    acumular_facturas(rec_rows, col_facturas, year, month,
                       usos, limite_efe, por_proveedor, resultado)
     acumular_rep(pag_rows, columnas_de_rep(pag_headers), year, month,
-                 por_proveedor, resultado)
+                 metodo_de_pago_por_uuid(rec_rows, col_facturas), por_proveedor, resultado)
 
     renglones = armar_renglones(por_proveedor, op_map or {}, resultado)
     return renglones, resultado

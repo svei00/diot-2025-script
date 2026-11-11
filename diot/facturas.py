@@ -91,10 +91,42 @@ def importes_tasa_8(fila, col, bucket):
     return base, iva
 
 
+def es_factura_exenta(fila, col):
+    """Heurística del libro (Resumen!AT) para actos exentos, mientras el
+    export no traiga la base por tasa del XML (Adenda 2 del HANDOFF):
+
+      * no trae IVA 16% ni IVA 8%, y Total Trasladados = 0;
+      * y es colegiatura (Nivel Educativo lleno) o el concepto dice "Alumno".
+
+    OJO: una factura sin impuestos trasladados NO es exenta por sí sola
+    (cuotas IMSS, actos "no objeto"); por eso la condición de colegiatura.
+    """
+    if numero(fila.get(col.iva_16)) or numero(valor(fila, col.iva_8)):
+        return False
+    if numero(valor(fila, col.total_trasladados)):
+        return False
+    es_colegiatura = bool(texto(valor(fila, col.nivel_educativo)))
+    menciona_alumno = "alumno" in texto(valor(fila, col.conceptos)).lower()
+    return es_colegiatura or menciona_alumno
+
+
+def importe_exento(fila, col, bucket):
+    """Base exenta: SubTotal - Descuento, solo en facturas bancarizadas (A)."""
+    if bucket != BUCKET_BANCARIZADAS or not es_factura_exenta(fila, col):
+        return 0.0
+    return numero(valor(fila, col.subtotal)) - numero(valor(fila, col.descuento))
+
+
 def importes_de_factura(fila, col, bucket):
-    """Bolsa de importes de una factura ya clasificada en su bucket."""
+    """Bolsa de importes de una factura ya clasificada en su bucket.
+
+    La tasa 0% de facturas queda en 0 a propósito: el export actual no la
+    distingue (son conceptos a 0% dentro de facturas mixtas). Se captura a
+    mano en el portal (decisión P4).
+    """
     importes = ImportesPorTasa()
     importes.base_16, importes.iva_16 = importes_tasa_16(fila, col)
     importes.base_8, importes.iva_8 = importes_tasa_8(fila, col, bucket)
+    importes.exento = importe_exento(fila, col, bucket)
     importes.iva_retenido = numero(fila.get(col.retenido_iva))
     return importes

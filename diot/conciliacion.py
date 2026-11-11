@@ -50,6 +50,12 @@ RENGLONES_POR_TASA = [
     ("B", "IVA 8%", "iva_8", "B_iva_8"),
     ("C", "base 8%", "base_8", "C_base_8"),
     ("C", "IVA 8%", "iva_8", "C_iva_8"),
+    ("A", "exento", "exento", "A_exento"),
+    ("C", "exento", "exento", "C_exento"),
+    ("C", "tasa 0%", "tasa_cero", "C_tasa_cero"),
+    ("A", "IVA ret.", "iva_retenido", None),
+    ("B", "IVA ret.", "iva_retenido", None),
+    ("C", "IVA ret.", "iva_retenido", None),
 ]
 
 # (concepto, clave en Declaracion, función que calcula nuestra cifra)
@@ -64,11 +70,22 @@ CRUCES_DECLARACION = [
      lambda r: sum(b.importes.base_16 for b in r.buckets.values())),
     ("Actos frontera 8% (con efectivo)", "actos_8_con_efectivo",
      lambda r: sum(b.importes.base_8 for b in r.buckets.values())),
+    ("Actos exentos (facturas + REP)", "actos_exentos",
+     lambda r: sum(b.importes.exento for b in r.buckets.values())),
+    ("Actos tasa 0% (solo REP)", "actos_tasa_cero",
+     lambda r: sum(b.importes.tasa_cero for b in r.buckets.values())),
     ("TOTAL IVA acreditable", "iva_acreditable_total",
      lambda r: sum(b.importes.iva_16 + b.importes.iva_8 for b in r.buckets.values())),
 ]
 
 CONTEOS = {"facturas_pue_n", "rep_n"}
+
+# Renglones que el script no puede derivar completos: la diferencia se captura a mano.
+CAPTURA_MANUAL = {"actos_tasa_cero": "facturas 0%: capturar a mano"}
+
+NOTA_TASA_CERO = ("La tasa 0% de FACTURAS no se deriva del export (conceptos a 0% dentro de "
+                  "facturas mixtas). El campo 51 solo trae la de REP; la de facturas se "
+                  "captura a mano en el portal.")
 
 
 def marca(diferencia, tolerancia):
@@ -129,8 +146,10 @@ def bloque_declaracion(resultado, declaracion, mes_largo, anio):
             lineas.append(" %-34s %16.2f %16s   etiqueta no encontrada" % (concepto, nuestro, "-"))
             continue
         tolerancia = 0 if clave in CONTEOS else TOLERANCIA_DECLARACION
-        lineas.append(" %-34s %16.2f %16.2f   %s" % (
-            concepto, nuestro, celdas[0], marca(nuestro - celdas[0], tolerancia)))
+        estado = marca(nuestro - celdas[0], tolerancia)
+        if estado != "OK" and clave in CAPTURA_MANUAL:
+            estado = "%s (%.2f)" % (CAPTURA_MANUAL[clave], celdas[0] - nuestro)
+        lineas.append(" %-34s %16.2f %16.2f   %s" % (concepto, nuestro, celdas[0], estado))
     return lineas
 
 
@@ -146,7 +165,8 @@ def bloque_avisos(resultado):
         lineas.append(" REP descartado: %-14s %-28s IVA %.2f" % (rfc, motivo, iva))
     for aviso in resultado.avisos:
         lineas.append(" AVISO: %s" % aviso)
-    return (["-" * ANCHO] + lineas) if lineas else []
+    lineas.append(" NOTA: %s" % NOTA_TASA_CERO)
+    return ["-" * ANCHO] + lineas
 
 
 def summary(ruta, renglones, resultado, anio, rfc, mes_largo, tipo,

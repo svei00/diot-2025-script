@@ -76,4 +76,25 @@ def importes_de_rep(fila, col):
     importes.iva_16 = en_pesos(fila, col.iva_16, equivalencia)
     importes.base_8 = en_pesos(fila, col.base_8, equivalencia)
     importes.iva_8 = en_pesos(fila, col.iva_8, equivalencia)
+    importes.exento = en_pesos(fila, col.base_exento, equivalencia)
+    importes.tasa_cero = en_pesos(fila, col.base_cero, equivalencia)
+    importes.iva_retenido = sum(en_pesos(fila, columna, equivalencia)
+                                for columna in col.retenciones_iva)
     return importes
+
+
+def paga_una_factura_pue(fila, col, metodo_por_uuid):
+    """True si la factura que paga el REP es PUE.
+
+    No debería existir: una factura PUE ya se consideró pagada al emitirse.
+    El SAT la cuenta dos veces (factura y REP) y el script hace lo mismo
+    para cuadrar con el prellenado (decisión P5), pero lo avisa: es una
+    deducción duplicada y hay que pedir al proveedor que cancele el REP.
+
+    Pagos 2.0 ya no trae MetodoDePagoDR, así que el método se busca en la
+    factura relacionada (IdDocumento Relacionado -> UUID de RecibidasXML).
+    MetodoDePagoDR se usa solo si viene lleno (REP de Pagos 1.0).
+    """
+    uuid = texto(valor(fila, col.documento_relacionado)).upper()
+    metodo = metodo_por_uuid.get(uuid) or texto(valor(fila, col.metodo_documento))
+    return metodo.upper().startswith("PUE")
