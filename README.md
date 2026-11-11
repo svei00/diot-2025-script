@@ -1,222 +1,146 @@
 # DIOT Generator — Registro de Facturación 2026v5
 
-Generador de archivos **DIOT** (Declaración Informativa de Operaciones con Terceros) para el SAT, basado en el `Registro de Facturación 2026v5` en cualquiera de sus formatos: **`.xlsb`, `.xlsm` o `.xlsx`**. Lee la hoja en **modo lectura** (nunca modifica); escribe solo el archivo `.txt` con el formato de 54 campos que el SAT requiere.
+Generador del archivo **TXT de carga masiva de la DIOT 2025+** (Declaración Informativa de Operaciones con Terceros) a partir del `Registro de Facturación 2026v5` en **`.xlsb`, `.xlsm` o `.xlsx`**. Lee el libro en **modo lectura** (nunca lo modifica) y escribe solo el `.txt` de 54 campos que pide el SAT.
+
+La metodología replica el prellenado del SAT (DyP) tal como quedó en el libro el 11-nov-2026. Los detalles, decisiones y pruebas están en [HANDOFF.md](HANDOFF.md).
 
 ## Características
 
-- ✅ **Lógica de flujo de caja** (paid-basis): PUE bancarizadas, efectivo ≤ $2,000, y REP (PPD pagados en el mes)  
-- ✅ **Redondeo Art. 20 CFF**: 0.01–0.50 → abajo, 0.51–0.99 → arriba  
-- ✅ **Invariante SAT**: Garantiza `round(base×0.16) ≥ iva_acreditable` por renglón (evita errores del SAT)  
-- ✅ **RFC/año auto-detectados** desde la ruta del archivo  
-- ✅ **Múltiples RFC**: cada RFC puede tener su carpeta; la config se persiste por RFC  
-- ✅ **Nombre de archivo**: `MM. Abbr YYYY  N DIOT Declaración.txt` (normal) o `… C1/C2/… DIOT Declaración.txt` (complementarias)  
-- ✅ **Tkinter Save-As**: elige dónde guardar; recuerda la última carpeta usada  
-- ✅ **Formatos aceptados**: `.xlsb`, `.xlsm`, `.xlsx` (también `.xltm`/`.xltx`)  
-- ✅ **100% Python, sin dependencias raras**: pyxlsb, openpyxl, pandas  
+- ✅ **Flujo de efectivo** (LIVA 1-B y 5): PUE bancarizadas, efectivo ≤ $2,000 y REP (PPD pagados en el mes)
+- ✅ **Tasa 16%, región fronteriza norte 8%, exentos, tasa 0% de REP e IVA retenido**
+- ✅ **REP en moneda extranjera** convertidos con `EquivalenciaDR`
+- ✅ **Redondeo Art. 20 CFF** y **base mínima que exige el validador del SAT** (`trunc(base × tasa) ≥ IVA`, para 16% y 8%)
+- ✅ **Conciliación** por tasa contra `Resumen` (por encabezado) y contra `Declaracion` (por etiqueta)
+- ✅ **Avisos**: REP descartados, REP sobre factura PUE, facturas que mezclan 16% y 8%, CP de frontera sur, retenciones en REP
+- ✅ Ventana (tkinter) o línea de comandos; nombre de archivo `MM. Abr AAAA  N DIOT Declaración.txt`
 
 ## Requisitos
 
-- **Python 3.7+**  
-- `pip install pyxlsb openpyxl pandas` (`pyxlsb` solo se usa para `.xlsb`, `openpyxl` solo para `.xlsm`/`.xlsx`)  
-- El **`Registro de Facturación 2026vN`** en `.xlsb`, `.xlsm` o `.xlsx` — puede vivir en cualquier carpeta; lo eliges con el file picker  
+- **Python 3.7+**
+- `pip install pyxlsb openpyxl` (`pyxlsb` solo para `.xlsb`; `openpyxl` para `.xlsm`/`.xlsx`)
+- Para las pruebas: `pip install pytest`
 
-> **Nota sobre `.xlsm` / `.xlsx`:** de estos formatos se leen los **valores en caché** de las fórmulas, que es lo que Excel escribe al guardar. Si el archivo lo generó un programa (nunca pasó por Excel), las fórmulas no traen valor y el script te lo dice: ábrelo en Excel, guárdalo y vuelve a correrlo. El `.xlsb` no tiene ese detalle.
-
-## Instalación rápida
-
-```bash
-git clone https://github.com/<tu-usuario>/diot-generator.git
-cd diot-generator
-pip install -r requirements.txt
-```
+> **`.xlsm` / `.xlsx`:** se leen los **valores en caché** de las fórmulas (lo que Excel escribe al guardar). Si el archivo nunca pasó por Excel, el script lo dice: ábrelo, guárdalo y vuelve a correrlo.
 
 ## Uso
 
-### GUI (recomendado — no tienes que teclear rutas)
+### Ventana (recomendado)
 ```bash
-Generar_DIOT.bat        # Windows: doble clic
-python diot_generator.py   # cualquier SO
+python diot_generator.py
 ```
-Se abre una ventana con:
-- **Examinar…** → file picker para el libro `.xlsb` / `.xlsm` / `.xlsx` (recuerda el último que usaste)
-- **Mes** → desplegable Enero–Diciembre
-- **Tipo** → `N` normal o `C1`, `C2`, … complementaria
-- **Generar DIOT** → corre y abre el Save-As para elegir dónde guardar
+También con doble clic en `Generar_DIOT.bat`. Eliges el libro, el mes y el tipo (`N` normal, `C1`, `C2`… complementaria), y al terminar ves la conciliación.
 
-Al terminar imprime la conciliación contra la hoja `Resumen` en la misma ventana.
-
-### CLI (para automatizar)
+### Línea de comandos
 ```bash
-python diot_generator.py 6                       # Junio normal, abre Save-As
-python diot_generator.py 6 C1                    # Junio complementaria 1
-python diot_generator.py 6 N "C:\out\jun.txt"    # sin ningún diálogo
-python diot_generator.py 6 N "jun.txt" --libro "D:\ruta\Registro 2026v5.xlsm"
+python diot_generator.py 10 N "C:\out\oct.txt" --libro "D:\ruta\Registro de Facturación 2026v5.xlsm"
+```
+```
+python diot_generator.py [mes 1-12] [N|C1|C2|...] [ruta_salida.txt] [--libro ruta]
+(sin argumentos abre la ventana; sin ruta de salida abre "Guardar como";
+ sin --libro busca uno en la carpeta actual: .xlsb > .xlsm > .xlsx)
 ```
 
-### Argumentos
-```
-python diot_generator.py [mes 1-12] [N|C1|C2|...] [ruta_salida.txt] [--libro ruta.xlsb|.xlsm|.xlsx]
+## Parámetros que se leen de la hoja `Control`
 
-(sin argumentos)  abre la GUI
-mes:        1-12 (enero-diciembre)
-tipo:       N=normal (default), C1/C2/.../Cn=complementaria
-ruta:       ruta.txt (opcional; si no se da, abre Save-As)
---libro:    ruta al libro .xlsb/.xlsm/.xlsx (opcional; si no se da, busca uno en la
-            carpeta actual, prefiriendo .xlsb > .xlsm > .xlsx)
-```
-
-## Parámetros leídos de la hoja `Control`
-
-No están hardcodeados — el script los lee del libro:
-
-| Parámetro | Celda `Control` | Valor 2026 |
+| Parámetro | Etiqueta en `Control` | Valor 2026 |
 |---|---|---|
 | Año fiscal | `Año fiscal` | 2026 |
-| Límite pago en efectivo (**IVA incluido**) | `Límite pago en efectivo` | 2,000 |
+| Límite de pago en efectivo (**IVA incluido**) | `Límite pago en efectivo` | 2,000 |
 | Usos CFDI deducibles | `Usos CFDI deducibles` | G01, G03 |
 
-## Salida
+## Campos que se llenan
 
-Archivo `.txt` con 54 campos separados por `|` (UTF-8, CRLF):
-```
-04|85|RFC|...|Base 16%|...|IVA acreditable|...|
-```
+Fuente: *Instructivo para el armado del archivo de carga masiva – DIOT*, SAT, enero 2025, sección 3. Un renglón por proveedor (tipo de tercero 04), 54 campos separados por `|`, UTF-8, CRLF.
 
-Cada línea es un proveedor. Los campos se llenan solo si hay datos:
-- Campo 1: `04` (tipo tercero nacional)  
-- Campo 2: `85` Otros (default; ver `diot_rfc_op.csv` para `03`/`06`)  
-- Campo 3: RFC del proveedor  
-- Campo 12: Base 16%  
-- Campo 22: IVA acreditable  
-- Campo 48: IVA retenido (si aplica)  
-
-## Reconciliación
-
-El script compara cada bucket contra la fila del mes en `Resumen` y marca `OK` o la diferencia. Junio 2026:
-
-```
- Bucket                             Base            IVA   vs Resumen
- A (PUE bancarizada)          2488829.60      398212.74   OK
- B (efectivo <= 2000)           16982.13        2717.14   OK
- C (REP / PPD)                 133729.54       21396.72   OK
-────────────────────────────────────────────────────────────────────
- TXT TOTAL (CFF redon.)          2639659         422327
- Ajuste base invariante SAT  +121 peso(s)  (trunc(base*0.16) >= IVA)
- REP descartado: AEA041220KM3   RelUUID=NO EXISTE  IVA 462.96
-```
-
-Si algún bucket sale `DIF`, el TXT no cuadra con el libro — revisa antes de subirlo. Diferencias < 0.01% caen bajo **importancia relativa** y el SAT las acepta.
-
-## Clasificación de operaciones (tipo)
-
-Por defecto, todos los proveedores se clasifican como `85` (Otros). Para cambiar:
-
-1. Crea un archivo `diot_rfc_op.csv` en la misma carpeta:
-   ```csv
-   RFC,Op
-   TME840315KT6,03
-   RDI841003QJ4,06
-   ```
-2. Ejecuta el script; leerá el CSV y aplicará las clasificaciones.
-
-Ver `diot_rfc_op.csv.example` para una plantilla.
-
-## Persistencia (RFC/carpeta)
-
-El script recuerda la última carpeta donde guardaste la DIOT para cada RFC, en:
-```
-%USERPROFILE%\.diot_config.json  (Windows)
-~/.diot_config.json              (Linux/Mac)
-```
-
-Cada vez que guardas, se actualiza la ruta. Así, si tienes varios RFC, cada uno mantiene su propia preferencia de carpeta.
-
-## Lógica de agregación (buckets)
-
-Espeja exactamente la hoja `Resumen` de tu registro:
-
-**Bucket A (PUE bancarizadas deducibles)**  
-- Fuente: `RecibidasXML`  
-- Filtro: Fecha Emision en mes, Tipo=Factura, Estado ≠ "Cancelado", Metodo comienza con "PUE", Bancarizado="Sí", UsoCFDI ∈ {G01, G03}  
-- Columnas: base/IVA → Resumen O/P/Q/R  
-
-**Bucket B (Efectivo ≤ $2,000)**  
-- Fuente: `RecibidasXML`  
-- Filtro: igual a A, pero FormaDePago="01", **`Total` ≤ 2,000** (el límite de `Control` es *IVA incluido*), Combustible ≠ "Sí"  
-- Columnas: base/IVA → Resumen S/T/U/V/W  
-
-**Bucket C (REP, PPD pagados en el mes)**  
-- Fuente: `PagosRecibidasXML`  
-- Filtro: FechaPago en mes, Estado ≠ "Cancelado", BancarizadoP="Sí", **`RelUUID` = "OK"**, `EsDuplicado` ≠ 1  
-- Columnas: base/IVA → Resumen X/Y/Z  
-
-> ⚠️ `Estado` es una columna **manual** (así lo dice `Resumen`: *"marcar Cancelado en columna Estado…"*).
-> Vacío = vigente. Por eso el filtro es `≠ "Cancelado"` y **no** `== "Vigente"`: en `PagosRecibidasXML`
-> el `Estado` viene en blanco y exigir `"Vigente"` tiraba **todos** los REP del mes.
-
-> ⚠️ `RelUUID = "NO EXISTE"` significa que el CFDI que ese REP dice pagar **no está** en `RecibidasXML`.
-> `Resumen` lo excluye, así que el script también — y te lo reporta al final para que lo investigues.
-
-**Base 16% = IVA ÷ 0.16** (no subtotal directo). Esto asegura que:
-1. La base sea consistente con el IVA que SAT validará.
-2. El IEPS (en Telmex, etc.) quede incluido correctamente en la base de 16%.
-3. Líneas exentas/0% no contaminen la base de 16%.
-
-## Errores del SAT y soluciones
-
-### "El importe del 'IVA acreditable'… no puede ser mayor al 'IVA pagado'…"
-
-**Causa**: el validador del SAT recalcula el *IVA pagado* del renglón desde la base y **trunca**, no redondea. El acuse `ErroresCargaMasiva_…2026.005.txt` (mayo) rechazó 3 renglones donde `round(base×0.16) == iva` pero `trunc(base×0.16) < iva`:
-
-| Línea | RFC | base | IVA acred. | `trunc(base×.16)` |
-|---|---|---|---|---|
-| 5 | ABU8605024N6 | 1254 | 201 | **200** ← SAT lo rechazó |
-| 60 | GMM070201AA8 | 1860 | 298 | **297** |
-| 89 | REF970701UK4 | 2979 | 477 | **476** |
-
-**Solución (v3)**: `ensure_invariant()` sube la base al mínimo entero que cumple
-
-```
-(base × 16) // 100  >=  iva          # aritmética entera, sin errores de float
-```
-
-es decir `base >= ceil(iva × 25 / 4)`. Esa condición es **más estricta** que el redondeo, así que satisface las dos reglas posibles (truncar o redondear) sin tener que adivinar cuál usa el SAT.
-
-**Costo**: +1 a +6 pesos por renglón. En junio 2026: **+121 pesos** sobre una base de 2,639,659 = **0.005%** → irrelevancia relativa. Verificado: **0 violaciones** en los 115 renglones, tanto truncando como redondeando.
-
-### ⚠️ Bug en la hoja `Declaracion`: C29 = 0
-
-`Declaracion!C29` ("Base IVA 16% REP recibidos") está en **0**, pero `C31` ("IVA acreditable prellenado") **sí** incluye el IVA de los REP. Eso deja el `VALOR DE ACTOS` (C30/C34) **subvaluado** por la base de los REP:
-
-```
-C34 (Monto a Capturar)   = 2,505,811.73
-C35 (Total IVA acred.)   =   422,326.60
-C34 × 0.16               =   400,929.88   <   422,326.60   ← el SAT rechazaría esto
-```
-
-El TXT sí es consistente (base 2,639,659 × 0.16 = 422,345 ≥ 422,327) porque el script suma la base de los REP. **Arregla C29** para que apunte a `Resumen!Y` (junio: 133,729.54) antes de capturar la declaración.
-
-### "¿Por qué la base no coincide exactamente con la Declaracion?"
-
-El script usa `base = iva / 0.16` tras redondear. Esto difiere del subtotal directo porque:
-- Telmex y otros llevan IEPS: el IVA es sobre subtotal+IEPS, no solo subtotal.
-- Líneas exentas/0% en multiparte no cuentan en la base de 16%.
-
-Compara contra C34 (VALOR DE ACTOS = IVA/0.16), no contra el subtotal crudo. Diffs < 0.01% = importancia relativa.
-
-## Requisitos del sistema
-
-| Sistema | Python | Notas |
+| Campo | Contenido | Origen |
 |---|---|---|
-| Windows | 3.7+ | Funciona en cmd, PowerShell. Doble-clic en `Generar_DIOT.bat` |
-| Linux | 3.7+ | Instala `python3-tk` para tkinter: `sudo apt-get install python3-tk` |
-| macOS | 3.7+ | tkinter incluido; usa `python3 diot_generator.py 5` |
+| 1 | Tipo de tercero `04` (nacional) | fijo |
+| 2 | Tipo de operación (`85` por omisión; `03`/`06` vía `diot_rfc_op.csv`) | catálogo |
+| 3 | RFC del proveedor | factura / REP |
+| 8 | Valor de actos pagados — región fronteriza **norte** 8% | facturas + REP |
+| 12 | Valor de actos pagados — tasa 16% | facturas + REP |
+| 18 | IVA acreditable — región fronteriza norte 8% | facturas + REP |
+| 22 | IVA acreditable — tasa 16% | facturas + REP |
+| 48 | IVA retenido | facturas (`Retenido IVA`) + REP (`Ret IVA * Importe`) |
+| 50 | Actos exentos | facturas (heurística) + REP (`IVA Excento Base`) |
+| 51 | Actos a tasa 0% | solo REP (`IVA Cero Base`) |
+
+Los campos sin dato quedan vacíos (con su `|`). Los de 16% y 8% solo se escriben si el proveedor tiene esa tasa.
+
+## Reglas por bucket
+
+**Universo de facturas** (`RecibidasXML`): Fecha Emision en el mes, `Tipo = Factura`, `Estado ≠ "Cancelado"`, método PUE, UsoCFDI deducible, **`Total > 0`** (el prellenado excluye las de $0).
+
+| | Bucket A — bancarizadas | Bucket B — efectivo ≤ límite | Bucket C — REP |
+|---|---|---|---|
+| Filtro | `Bancarizado = Sí` | `FormaDePago 01`, `Total ≤ 2,000`, sin combustible | `FechaPago` en el mes, `Estado ≠ Cancelado`, `BancarizadoP = Sí`, `EsDuplicado ≠ 1`, `RelUUID = OK` |
+| Base 16% | IVA 16% ÷ 0.16 | IVA 16% ÷ 0.16 | `IVA 16 Base` ÷ EquivalenciaDR |
+| Base 8% | SubTotal − Descuento | IVA 8% ÷ 0.08 | `IVA 8 Base` ÷ EquivalenciaDR |
+| Exentos | colegiaturas / "Alumno" sin traslados | — | `IVA Excento Base` ÷ EquivalenciaDR |
+| Tasa 0% | — (captura manual) | — | `IVA Cero Base` ÷ EquivalenciaDR |
+
+- **Moneda extranjera:** si `MonedaDR ≠ MXN`, todos los importes del REP vienen en la moneda de la factura y se dividen entre `EquivalenciaDR` (vacía o 0 → 1). Si `MonedaP ≠ MXN`, el REP se excluye y se reporta.
+- **Factura con 16% y 8% a la vez:** la base 8% se toma como IVA ÷ 0.08 y se avisa (hay que verificar contra el XML).
+- **REP que paga una factura PUE:** se cuenta dos veces, igual que el SAT, y se avisa para pedir la corrección al proveedor.
+- **Facturas sin impuestos trasladados** (cuotas IMSS, "no objeto") no son exentas ni tasa 0%.
+- **Fechas:** texto `dd/mm/aaaa`; nunca se interpretan con la configuración regional.
+
+## Conciliación — octubre 2026
+
+```
+ Bucket                 Concepto             Script          Resumen
+ A PUE bancarizadas     IVA 16%           685197.03        685197.03   OK
+ B efectivo <= 2000     IVA 16%             6256.12          6256.12   OK
+ C REP (PPD pagados)    IVA 16%            29678.97         29678.97   OK
+ A PUE bancarizadas     base 8%           192641.81        192641.81   OK
+ C REP (PPD pagados)    base 8%           172449.96        172449.96   OK
+ A PUE bancarizadas     exento             14440.00         14440.00   OK
+ C REP (PPD pagados)    exento               520.00           520.00   OK
+ A PUE bancarizadas     documentos              405              405   OK
+ ...
+ Totales A+B+C (antes de redondeo)              Base              IVA
+ Tasa 16%                                 4507075.69        721132.11
+ Región fronteriza norte 8%                365138.02         29211.01
+ Exentos                                    14960.00
+ IVA acreditable total (16% + 8%)                           750343.12
+ ...
+ vs Declaracion (por etiqueta)                Script      Declaracion
+ Actos tasa 16% (con efectivo)            4507075.69       4507075.69   OK
+ Actos frontera 8% (con efectivo)          365138.02        365138.02   OK
+ Actos exentos (facturas + REP)             14960.00         14960.00   OK
+ Actos tasa 0% (solo REP)                       0.00          8991.00   facturas 0%: capturar a mano (8991.00)
+ TOTAL IVA acreditable                     750343.12        750343.12   OK
+```
+
+Si algún renglón sale `DIF`, el TXT no cuadra con el libro: revísalo antes de subirlo. La tasa 0% de facturas no se puede derivar del export actual y se captura a mano en el portal.
+
+## Errores del SAT: "El IVA acreditable no puede ser mayor al IVA pagado"
+
+El validador recalcula el IVA pagado del renglón desde la base y **trunca**. En mayo 2026 rechazó renglones con `round(base × 0.16) = IVA` pero `trunc(base × 0.16) < IVA` (p. ej. base 1254, IVA 201). El script sube la base al mínimo entero que cumple `(base × tasa) // 100 ≥ IVA`, con aritmética entera, para 16% y para 8%. Costo típico: unos pesos por renglón (octubre 2026: +163 en 16% y +38 en 8%).
+
+## Clasificación de operaciones
+
+Todos los proveedores salen como `85` (Otros). Para cambiarlo, crea `diot_rfc_op.csv` junto al libro (ver `diot_rfc_op.csv.example`):
+```csv
+RFC,Op
+TME840315KT6,03
+```
 
 ## Desarrollo
 
-El script está estructurado para Boardflare (Excel-Python). La función `build_diot(rec_headers, rec_rows, pag_headers, pag_rows, year, month, op_map)` es pura (sin I/O); puedes llamarla desde Boardflare para una vista previa de totales.
+```
+diot_generator.py        entrada (CLI / ventana)
+diot/                    lógica, un archivo por responsabilidad (mapa en diot/__init__.py)
+  construir.py           build_diot(): función pura, sin I/O (llamable desde Boardflare)
+tests/                   pytest con filas sintéticas (no leen el libro real)
+DIOT_Macro.bas           versión VBA que replica la misma lógica
+```
 
-Para editar la lógica de buckets, mira la función `build_diot()` alrededor de la línea 120.
+```bash
+python -m pytest
+```
+
+La prueba contra el libro real (octubre 2026 y julio 2026 byte a byte) es manual y está documentada en [HANDOFF.md](HANDOFF.md).
 
 ## Licencia
 
@@ -224,9 +148,5 @@ MIT. Úsalo, modifícalo, comparte. Ver [LICENSE](LICENSE).
 
 ## Autor & Créditos
 
-Generado para GOOH841231EPA (Hugo Edgar González Orozco).  
+Generado para GOOH841231EPA (Hugo Edgar González Orozco).
 Con asistencia de Claude (Anthropic).
-
----
-
-¿Preguntas? Abre un **issue** en GitHub. ¿Mejoras? Haz un **pull request**.
