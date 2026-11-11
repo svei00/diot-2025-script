@@ -36,3 +36,8 @@ Thumbs.db
 # Temporales
 _*
 ~*
+!__init__.py
+.pytest_cache/
+
+# Datos reales de clientes (libros y TXT de oráculo): nunca se versionan
+resources/
