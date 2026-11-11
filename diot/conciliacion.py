@@ -120,6 +120,25 @@ def bloque_por_tasa(resultado, resumen, limite):
     return lineas
 
 
+def suma_de_buckets(resultado, atributo):
+    return sum(getattr(b.importes, atributo) for b in resultado.buckets.values())
+
+
+def bloque_totales_por_tasa(resultado):
+    """A + B + C por tasa, antes de redondear (cifras de la tabla de octubre)."""
+    lineas = ["-" * ANCHO, " %-34s %16s %16s" % ("Totales A+B+C (antes de redondeo)", "Base", "IVA")]
+    for nombre, base, iva in (("Tasa 16%", "base_16", "iva_16"),
+                              ("Región fronteriza norte 8%", "base_8", "iva_8")):
+        lineas.append(" %-34s %16.2f %16.2f" % (nombre, suma_de_buckets(resultado, base),
+                                                suma_de_buckets(resultado, iva)))
+    lineas.append(" %-34s %16.2f" % ("Exentos", suma_de_buckets(resultado, "exento")))
+    lineas.append(" %-34s %16.2f" % ("Tasa 0% (solo REP)", suma_de_buckets(resultado, "tasa_cero")))
+    lineas.append(" %-34s %16s %16.2f" % ("IVA acreditable total (16% + 8%)", "",
+                                          suma_de_buckets(resultado, "iva_16")
+                                          + suma_de_buckets(resultado, "iva_8")))
+    return lineas
+
+
 def bloque_totales_txt(renglones):
     """Suma de cada campo del TXT (lo que verá el portal al cargar el archivo)."""
     lineas = ["-" * ANCHO, " TXT en pesos (Art. 20 CFF), suma por campo:"]
@@ -173,6 +192,7 @@ def summary(ruta, renglones, resultado, anio, rfc, mes_largo, tipo,
             resumen=None, declaracion=None, limite=2000):
     lineas = encabezado(rfc, mes_largo, anio, tipo, renglones, ruta)
     lineas += bloque_por_tasa(resultado, resumen, limite)
+    lineas += bloque_totales_por_tasa(resultado)
     lineas += bloque_totales_txt(renglones)
     lineas += bloque_declaracion(resultado, declaracion, mes_largo, anio)
     lineas += bloque_avisos(resultado)
